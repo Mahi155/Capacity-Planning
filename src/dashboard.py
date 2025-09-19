@@ -3,6 +3,9 @@ import plotly.graph_objects as go
 from src.forecasting import Forecaster
 from src.scaling import Scaler
 from src.cost import calculate_cost, estimate_monthly_savings
+from src.ai_recommendation import generate_recommendation
+from openai import OpenAI
+
 
 class Dashboard:
     def __init__(self, df):
@@ -12,17 +15,35 @@ class Dashboard:
     def run(self):
         st.title("Multi-Tenant Service Scaling & Cost Optimization Dashboard")
 
+        # -----------------------------
+        # Sidebar: API Key
+        # -----------------------------
+        st.sidebar.subheader("🔑 API Configuration")
+        user_api_key = st.sidebar.text_input("Enter your OpenAI API key", type="password")
+        client = None
+        if user_api_key:
+            client = OpenAI(api_key=user_api_key)
+
+        # -----------------------------
+        # Filters
+        # -----------------------------
         client_option = st.selectbox("Select Client", self.df['client_id'].unique())
-        service_option = st.selectbox("Select Service", self.df[self.df['client_id']==client_option]['service_name'].unique())
+        service_option = st.selectbox(
+            "Select Service",
+            self.df[self.df['client_id'] == client_option]['service_name'].unique()
+        )
         region_option = st.selectbox(
             "Select Region",
-            self.df[(self.df['client_id']==client_option) & (self.df['service_name']==service_option)]['region'].unique()
+            self.df[
+                (self.df['client_id'] == client_option) &
+                (self.df['service_name'] == service_option)
+            ]['region'].unique()
         )
 
         df_filtered = self.df[
-            (self.df['client_id']==client_option) &
-            (self.df['service_name']==service_option) &
-            (self.df['region']==region_option)
+            (self.df['client_id'] == client_option) &
+            (self.df['service_name'] == service_option) &
+            (self.df['region'] == region_option)
         ]
 
         # -----------------------------
@@ -30,10 +51,14 @@ class Dashboard:
         # -----------------------------
         st.subheader(f"Observed Requests & CPU Usage ({client_option})")
         fig_obs = go.Figure()
-        fig_obs.add_trace(go.Scatter(x=df_filtered['timestamp'], y=df_filtered['requests_per_min'],
-                                     name='Requests', yaxis='y1'))
-        fig_obs.add_trace(go.Scatter(x=df_filtered['timestamp'], y=df_filtered['cpu_usage_pct'],
-                                     name='CPU Usage %', yaxis='y2'))
+        fig_obs.add_trace(go.Scatter(
+            x=df_filtered['timestamp'], y=df_filtered['requests_per_min'],
+            name='Requests', yaxis='y1'
+        ))
+        fig_obs.add_trace(go.Scatter(
+            x=df_filtered['timestamp'], y=df_filtered['cpu_usage_pct'],
+            name='CPU Usage %', yaxis='y2'
+        ))
         fig_obs.update_layout(
             xaxis_title='Timestamp',
             yaxis=dict(title='Requests', side='left'),
@@ -51,7 +76,7 @@ class Dashboard:
         # Merge forecast into existing df
         df_forecast = df_filtered.copy()
         df_forecast = df_forecast.merge(
-            forecast_df[['ds','yhat','yhat_lower','yhat_upper']].rename(columns={'ds':'timestamp'}),
+            forecast_df[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].rename(columns={'ds': 'timestamp'}),
             on='timestamp', how='left'
         )
         df_forecast['recommended_hosts'] = df_forecast.apply(
@@ -87,9 +112,9 @@ class Dashboard:
         # -----------------------------
         # Data Table & Monthly Savings
         # -----------------------------
-        st.dataframe(df_forecast[['timestamp','requests_per_min','yhat',
-                                  'num_hosts','recommended_hosts','current_cost',
-                                  'optimized_cost','savings_usd']].head(10))
+        st.dataframe(df_forecast[['timestamp', 'requests_per_min', 'yhat',
+                                  'num_hosts', 'recommended_hosts', 'current_cost',
+                                  'optimized_cost', 'savings_usd']].head(10))
 
         monthly_savings = estimate_monthly_savings(df_forecast)
         st.metric(label="Estimated Monthly Savings", value=f"${monthly_savings:,.2f}")
@@ -124,19 +149,21 @@ class Dashboard:
         st.plotly_chart(fig_cost, use_container_width=True)
 
         # -----------------------------
-        # AI Recommendations (Top 3 forecast points)
+        # AI Recommendations
         # -----------------------------
         st.subheader("AI Recommendations")
-        from src.ai_recommendation import generate_recommendation  # make sure this exists
 
-        try:
-            rec_text = generate_recommendation(
-                df_forecast=df_forecast,
-                client_id=client_option,
-                service_name=service_option,
-                region=region_option
-            )
-            st.write(rec_text)
-        except Exception as e:
-            st.write(f"Error generating recommendation: {e}")
-
+        if client:
+            try:
+                rec_text = generate_recommendation(
+                    client=client,
+                    df_forecast=df_forecast,
+                    client_id=client_option,
+                    service_name=service_option,
+                    region=region_option
+                )
+                st.write(rec_text)
+            except Exception as e:
+                st.error(f"Error generating recommendation: {e}")
+        else:
+            st.info("Enter your OpenAI API key in the sidebar to enable AI recommendations.")

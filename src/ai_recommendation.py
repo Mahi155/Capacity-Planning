@@ -1,14 +1,20 @@
-import openai
-import os
 import pandas as pd
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
-
-def generate_recommendation(df_forecast, client_id, service_name, region):
+def generate_recommendation(client, df_forecast, client_id, service_name, region):
     """
     Generate AI recommendation for a client-service-region
     using full forecast + observed data with spike/trend detection.
+
+    Args:
+        client: OpenAI client object (OpenAI(api_key=...))
+        df_forecast: pd.DataFrame with forecast + observed data
+        client_id: str
+        service_name: str
+        region: str
+
+    Returns:
+        str: AI-generated recommendation
     """
     try:
         # Compute summary metrics
@@ -33,8 +39,8 @@ def generate_recommendation(df_forecast, client_id, service_name, region):
             spike_summary = f"Notable request spikes at: {', '.join(spike_times[:5])}"  # limit to first 5
 
         # Detect trends: increasing/decreasing over period
-        first_half_mean = df_forecast['requests_per_min'][:len(df_forecast)//2].mean()
-        second_half_mean = df_forecast['requests_per_min'][len(df_forecast)//2:].mean()
+        first_half_mean = df_forecast['requests_per_min'][:len(df_forecast) // 2].mean()
+        second_half_mean = df_forecast['requests_per_min'][len(df_forecast) // 2:].mean()
         trend_summary = "Traffic is stable"
         if second_half_mean > first_half_mean * 1.1:
             trend_summary = "Traffic is trending upwards"
@@ -43,30 +49,30 @@ def generate_recommendation(df_forecast, client_id, service_name, region):
 
         # Build prompt
         prompt = f"""
-                    You are a cloud infrastructure expert. Analyze the following service metrics
-                    and suggest optimization opportunities.
-                    
-                    Client: {client_id}
-                    Service: {service_name}
-                    Region: {region}
-                    
-                    Metrics summary (forecast period):
-                    - Requests per minute: min={requests_min:.0f}, max={requests_max:.0f}, mean={requests_mean:.0f}
-                    - CPU usage %: min={cpu_min:.1f}, max={cpu_max:.1f}, mean={cpu_mean:.1f}
-                    - Current hosts: {current_hosts}
-                    - Recommended hosts: {recommended_hosts}
-                    - Estimated cost savings: ${savings:,.2f}
-                    - {trend_summary}
-                    - {spike_summary if spike_summary else "No major request spikes detected"}
-                    
-                    Provide actionable recommendations for:
-                    - Scaling strategy
-                    - Cost optimization
-                    - Performance improvements
-                    """
+        You are a cloud infrastructure expert. Analyze the following service metrics
+        and suggest optimization opportunities.
 
-        # Call OpenAI ChatCompletion API (v1.0+)
-        response = openai.chat.completions.create(
+        Client: {client_id}
+        Service: {service_name}
+        Region: {region}
+
+        Metrics summary (forecast period):
+        - Requests per minute: min={requests_min:.0f}, max={requests_max:.0f}, mean={requests_mean:.0f}
+        - CPU usage %: min={cpu_min:.1f}, max={cpu_max:.1f}, mean={cpu_mean:.1f}
+        - Current hosts: {current_hosts}
+        - Recommended hosts: {recommended_hosts}
+        - Estimated cost savings: ${savings:,.2f}
+        - {trend_summary}
+        - {spike_summary if spike_summary else "No major request spikes detected"}
+
+        Provide actionable recommendations for:
+        - Scaling strategy
+        - Cost optimization
+        - Performance improvements
+        """
+
+        # Call OpenAI ChatCompletion API via the passed client
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "You are a cloud infrastructure expert."},
