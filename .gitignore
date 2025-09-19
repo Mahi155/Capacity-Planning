@@ -1,0 +1,26 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.env
+.venv/
+venv/
+.env.*
+
+# IDE files
+.idea/
+
+# Databases
+*.sqlite3
+
+# Logs
+*.log
+
+# Data files
+*.csv
+
+# MacOS system files
+.DS_Store
